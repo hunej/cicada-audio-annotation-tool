@@ -56,7 +56,6 @@ cicada
    wav. Annotations autosave when you switch recordings/variants by default.
 6. **Switch variant** (click the bar or press `V`): the spectrogram view stays at
    the *same* time/frequency window, so mic and enhanced line up for comparison.
-   **Lock view across files** extends that locking to different recordings too.
 7. **Playback / cursor** (ocenaudio-style): **click** the spectrogram to drop the
    cyan play cursor, then **Space** to play/pause from it — the cursor animates
    along as it plays. **Play** plays from the cursor, **Play selection** plays the

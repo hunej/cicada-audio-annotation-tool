@@ -51,8 +51,7 @@ class MainWindow(QMainWindow):
         self._current_result: Optional[spectrogram.SpectrogramResult] = None
         self._dirty: bool = False
 
-        # View-lock state.
-        self._view_locked: bool = False
+        # Last view range, re-applied when switching variant of a recording.
         self._saved_range: Optional[tuple[float, float, float, float]] = None
 
         # Playback / playhead state.
@@ -144,7 +143,6 @@ class MainWindow(QMainWindow):
         self._controls.paramsChanged.connect(self._on_params_changed)
         self._controls.colormapChanged.connect(self._on_colormap_changed)
         self._controls.annotateModeToggled.connect(self._view.set_annotate_mode)
-        self._controls.viewLockToggled.connect(self._on_view_lock_toggled)
         self._controls.playRequested.connect(self._on_play)
         self._controls.playSelectionRequested.connect(self._on_play_selection)
         self._controls.stopRequested.connect(self._on_stop)
@@ -204,8 +202,8 @@ class MainWindow(QMainWindow):
 
         self._current_path = path
         self._current_audio = data
-        # Keep the view on a variant switch (same recording) or when locked.
-        self._compute_and_show(keep_view=same_recording or self._view_locked)
+        # Keep the view on a variant switch (same recording); reset for new ones.
+        self._compute_and_show(keep_view=same_recording)
 
         # Reset the play cursor on a new recording; keep it across variants.
         if not same_recording:
@@ -264,12 +262,6 @@ class MainWindow(QMainWindow):
     def _on_colormap_changed(self, name: str) -> None:
         self._view.set_colormap(name)
         self._config.colormap = name
-
-    def _on_view_lock_toggled(self, locked: bool) -> None:
-        self._view_locked = bool(locked)
-        if locked:
-            # Capture the current range as the one to hold.
-            self._saved_range = self._view.get_view_range()
 
     def _on_view_range_changed(self, t0: float, t1: float, f0: float, f1: float) -> None:
         self._saved_range = (t0, t1, f0, f1)

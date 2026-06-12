@@ -41,7 +41,6 @@ class ControlsPanel(QWidget):
         playSelectionRequested()     play the selected box's time span
         stopRequested()              stop playback
         annotateModeToggled(bool)    annotate (draw) mode on/off
-        viewLockToggled(bool)        keep the view range across files
         saveRequested()              save the current annotation
     """
 
@@ -51,7 +50,6 @@ class ControlsPanel(QWidget):
     playSelectionRequested = Signal()
     stopRequested = Signal()
     annotateModeToggled = Signal(bool)
-    viewLockToggled = Signal(bool)
     saveRequested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -136,10 +134,6 @@ class ControlsPanel(QWidget):
         self._annotate = QCheckBox("Annotate mode (drag to draw)")
         self._annotate.toggled.connect(self.annotateModeToggled.emit)
         v.addWidget(self._annotate)
-
-        self._view_lock = QCheckBox("Lock view across files")
-        self._view_lock.toggled.connect(self.viewLockToggled.emit)
-        v.addWidget(self._view_lock)
         return box
 
     def _build_playback_group(self) -> QGroupBox:
