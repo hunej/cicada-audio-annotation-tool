@@ -1,9 +1,11 @@
 """Main application window — wires the WP1-3 layers into a usable GUI.
 
-:class:`MainWindow` lays out the file list (left), the interactive spectrogram
-(center) and the controls + label panels (right), and connects every panel
-signal to the audio / spectrogram / annotation back-end. :func:`main` is the
-``cicada`` console-script entry point.
+:class:`MainWindow` lays out a playback toolbar (top, ocenaudio-style), the file
+list + mode/label panels (left, stacked) and the interactive spectrogram
+(center), and connects every panel signal to the audio / spectrogram /
+annotation back-end. The less-frequently-touched spectrogram parameters live in
+the *View → Settings…* dialog. :func:`main` is the ``cicada`` console-script
+entry point.
 """
 
 from __future__ import annotations
@@ -17,9 +19,14 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QGroupBox,
     QMainWindow,
     QSplitter,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -27,7 +34,7 @@ from PySide6.QtWidgets import (
 from . import audio, io_json, label_config, spectrogram
 from .config import AppConfig, load_config, save_config
 from .models import Annotation
-from .widgets.controls import ControlsPanel
+from .widgets.controls import SettingsPanel
 from .widgets.file_list import FileListPanel
 from .widgets.label_panel import LabelPanel
 from .widgets.spectrogram_view import SpectrogramView
@@ -65,6 +72,7 @@ class MainWindow(QMainWindow):
         self._play_timer.timeout.connect(self._advance_playhead)
 
         self._build_ui()
+        self._build_toolbar()
         self._build_menu()
         self._wire()
         self._apply_config()
@@ -75,27 +83,80 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         self._file_list = FileListPanel()
         self._view = SpectrogramView()
-        self._controls = ControlsPanel()
         self._labels = LabelPanel()
 
-        # Right column: controls on top, labels below.
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(self._controls)
-        right_layout.addWidget(self._labels)
+        # Spectrogram params live in the View → Settings… dialog (built lazily).
+        self._settings = SettingsPanel()
+        self._settings_dialog: Optional[QDialog] = None
+
+        # Mode group (annotate toggle) shown above the labels on the left.
+        mode_box = QGroupBox("Mode")
+        mode_layout = QVBoxLayout(mode_box)
+        self._annotate = QCheckBox("Annotate mode (drag to draw)")
+        mode_layout.addWidget(self._annotate)
+
+        # Left column (top→bottom): file list, then mode + labels, splittable.
+        bottom = QWidget()
+        bottom_layout = QVBoxLayout(bottom)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.addWidget(mode_box)
+        bottom_layout.addWidget(self._labels, 1)
+
+        left = QSplitter(Qt.Orientation.Vertical)
+        left.addWidget(self._file_list)
+        left.addWidget(bottom)
+        left.setStretchFactor(0, 3)
+        left.setStretchFactor(1, 2)
+        left.setSizes([460, 340])
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._file_list)
+        splitter.addWidget(left)
         splitter.addWidget(self._view)
-        splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 4)
-        splitter.setStretchFactor(2, 1)
-        splitter.setSizes([240, 760, 280])
+        splitter.setSizes([280, 1000])
 
         self.setCentralWidget(splitter)
         self.statusBar().showMessage("Open a folder to begin.")
+
+    def _build_toolbar(self) -> None:
+        """Top transport bar (ocenaudio-style): playback + save."""
+        bar = QToolBar("Playback")
+        bar.setMovable(False)
+        self.addToolBar(bar)
+
+        play_btn = QAction("▶ Play", self)
+        play_btn.triggered.connect(self._on_play)
+        bar.addAction(play_btn)
+
+        play_sel_btn = QAction("▶ Selection", self)
+        play_sel_btn.triggered.connect(self._on_play_selection)
+        bar.addAction(play_sel_btn)
+
+        stop_btn = QAction("■ Stop", self)
+        stop_btn.triggered.connect(self._on_stop)
+        bar.addAction(stop_btn)
+
+        bar.addSeparator()
+
+        save_btn = QAction("Save", self)
+        save_btn.triggered.connect(self._on_save)
+        bar.addAction(save_btn)
+
+    def _open_settings(self) -> None:
+        """Show the (non-modal) spectrogram settings dialog."""
+        if self._settings_dialog is None:
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Settings")
+            layout = QVBoxLayout(dlg)
+            layout.addWidget(self._settings)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+            buttons.rejected.connect(dlg.hide)
+            layout.addWidget(buttons)
+            self._settings_dialog = dlg
+        self._settings_dialog.show()
+        self._settings_dialog.raise_()
+        self._settings_dialog.activateWindow()
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
@@ -121,6 +182,11 @@ class MainWindow(QMainWindow):
         prev_act.triggered.connect(self._file_list.prev)
         file_menu.addAction(prev_act)
 
+        view_menu = self.menuBar().addMenu("&View")
+        settings_act = QAction("Settings…", self)
+        settings_act.triggered.connect(self._open_settings)
+        view_menu.addAction(settings_act)
+
         # Window-level shortcuts (work regardless of focused widget).
         play_act = QAction("Play / Pause", self)
         play_act.setShortcut(QKeySequence(Qt.Key.Key_Space))
@@ -140,13 +206,9 @@ class MainWindow(QMainWindow):
     def _wire(self) -> None:
         self._file_list.selectionChanged.connect(self._on_file_selected)
 
-        self._controls.paramsChanged.connect(self._on_params_changed)
-        self._controls.colormapChanged.connect(self._on_colormap_changed)
-        self._controls.annotateModeToggled.connect(self._view.set_annotate_mode)
-        self._controls.playRequested.connect(self._on_play)
-        self._controls.playSelectionRequested.connect(self._on_play_selection)
-        self._controls.stopRequested.connect(self._on_stop)
-        self._controls.saveRequested.connect(self._on_save)
+        self._settings.paramsChanged.connect(self._on_params_changed)
+        self._settings.colormapChanged.connect(self._on_colormap_changed)
+        self._annotate.toggled.connect(self._view.set_annotate_mode)
 
         self._labels.activeLabelChanged.connect(self._on_active_label_changed)
         self._labels.applyToSelected.connect(self._on_apply_to_selected)
@@ -158,7 +220,7 @@ class MainWindow(QMainWindow):
 
     def _apply_config(self) -> None:
         """Apply persisted config to the controls/labels and reopen folder."""
-        self._controls.apply_params(self._config.spectrogram, self._config.colormap)
+        self._settings.apply_params(self._config.spectrogram, self._config.colormap)
         labels = label_config.load_labels(self._config.labels_file)
         self._labels.set_labels(labels)
         self._view.set_colormap(self._config.colormap)
@@ -237,13 +299,13 @@ class MainWindow(QMainWindow):
         """
         if self._current_audio is None:
             return
-        params = self._controls.current_params()
+        params = self._settings.current_params()
         result = spectrogram.compute(
             self._current_audio.samples, self._current_audio.sample_rate, params
         )
         self._current_result = result
         self._view.set_spectrogram(result)
-        self._view.set_colormap(self._controls.current_colormap())
+        self._view.set_colormap(self._settings.current_colormap())
         self._view.set_levels(params.db_floor, params.db_ceil)
         if keep_view and self._saved_range is not None:
             self._view.set_view_range(*self._saved_range)
@@ -379,7 +441,7 @@ class MainWindow(QMainWindow):
         """Build and write the annotation sidecar for ``path``."""
         if self._current_audio is None or self._current_result is None:
             return
-        params = self._controls.current_params()
+        params = self._settings.current_params()
         boxes = self._view.get_boxes()
         annotation = Annotation(
             audio_file=os.path.basename(path),
@@ -401,8 +463,8 @@ class MainWindow(QMainWindow):
     # Config persistence
     # ------------------------------------------------------------------ #
     def _persist_config(self) -> None:
-        self._config.spectrogram = self._controls.current_params()
-        self._config.colormap = self._controls.current_colormap()
+        self._config.spectrogram = self._settings.current_params()
+        self._config.colormap = self._settings.current_colormap()
         try:
             save_config(self._config)
         except OSError:

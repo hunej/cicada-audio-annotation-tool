@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -52,7 +53,7 @@ class LabelPanel(QWidget):
 
         activeLabelChanged(object)   the newly active LabelDef
         applyToSelected(object)      apply this LabelDef to the selected box
-        labelsChanged()              a label was added (caller persists)
+        labelsChanged()              a label was added/renamed/deleted (caller persists)
     """
 
     activeLabelChanged = Signal(object)
@@ -71,6 +72,11 @@ class LabelPanel(QWidget):
         self._list = QListWidget()
         self._list.setIconSize(QSize(14, 14))
         self._list.currentRowChanged.connect(self._on_row_changed)
+        self._list.itemDoubleClicked.connect(
+            lambda item: self._rename_label(self._list.row(item))
+        )
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._list)
 
         btn_row = QHBoxLayout()
@@ -155,3 +161,53 @@ class LabelPanel(QWidget):
         self._list.addItem(item)
         self._list.setCurrentRow(self._list.count() - 1)
         self.labelsChanged.emit()
+
+    def _on_context_menu(self, pos) -> None:
+        """Right-click menu on a label: rename / delete."""
+        item = self._list.itemAt(pos)
+        if item is None:
+            return
+        row = self._list.row(item)
+        menu = QMenu(self)
+        rename_act = menu.addAction("Rename…")
+        delete_act = menu.addAction("Delete")
+        chosen = menu.exec(self._list.viewport().mapToGlobal(pos))
+        if chosen == rename_act:
+            self._rename_label(row)
+        elif chosen == delete_act:
+            self._delete_label(row)
+
+    def _rename_label(self, row: int) -> None:
+        """Prompt for a new name and rename the label at ``row`` (keeps color)."""
+        if not (0 <= row < len(self._labels)):
+            return
+        current = self._labels[row]
+        name, ok = QInputDialog.getText(
+            self, "Rename label", "Label name:", text=current.name
+        )
+        name = name.strip()
+        if not ok or not name or name == current.name:
+            return
+        if any(i != row and l.name == name for i, l in enumerate(self._labels)):
+            return  # would duplicate an existing label — ignore
+        self._labels[row] = LabelDef(name, current.color)
+        item = self._list.item(row)
+        item.setText(name)
+        item.setData(Qt.ItemDataRole.UserRole, name)
+        if row == self._list.currentRow():
+            self.activeLabelChanged.emit(self._labels[row])
+        self.labelsChanged.emit()
+
+    def _delete_label(self, row: int) -> None:
+        """Delete the label at ``row`` and re-point the active selection."""
+        if not (0 <= row < len(self._labels)):
+            return
+        del self._labels[row]
+        self._list.blockSignals(True)
+        self._list.takeItem(row)
+        if self._labels:
+            self._list.setCurrentRow(min(row, len(self._labels) - 1))
+        self._list.blockSignals(False)
+        self.labelsChanged.emit()
+        if self._labels:
+            self.activeLabelChanged.emit(self.active_label())

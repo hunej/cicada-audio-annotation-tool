@@ -1,9 +1,11 @@
-"""Controls panel — spectrogram params, playback and mode toggles.
+"""Settings panel — live spectrogram parameters.
 
-:class:`ControlsPanel` groups the live spectrogram-parameter editors (n_fft,
-hop, window, colormap, dB levels, f_max), the playback buttons and the mode
-toggles (annotate, view-lock) plus a Save button. It emits a fresh
-:class:`~cicada.spectrogram.SpectrogramParams` whenever a parameter changes.
+:class:`SettingsPanel` holds the live spectrogram-parameter editors (n_fft, hop,
+window, colormap, dB levels, f_max). It emits a fresh
+:class:`~cicada.spectrogram.SpectrogramParams` whenever a parameter changes, so
+the spectrogram re-renders live while the panel (typically shown in the
+*View → Settings…* dialog) is open. Playback and mode controls live elsewhere
+(the top toolbar and the left panel respectively).
 """
 
 from __future__ import annotations
@@ -16,11 +18,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QPushButton,
     QSpinBox,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -30,50 +28,24 @@ _NFFT_CHOICES = (256, 512, 1024, 2048, 4096)
 _COLORMAPS = ("viridis", "magma", "inferno", "plasma", "gray")
 
 
-class ControlsPanel(QWidget):
-    """Spectrogram / playback / mode controls.
+class SettingsPanel(QWidget):
+    """Spectrogram parameter editors.
 
     Signals::
 
         paramsChanged(object)        a fresh SpectrogramParams (n_fft/hop/...)
         colormapChanged(str)         the new colormap name
-        playRequested()              play the whole file
-        playSelectionRequested()     play the selected box's time span
-        stopRequested()              stop playback
-        annotateModeToggled(bool)    annotate (draw) mode on/off
-        saveRequested()              save the current annotation
     """
 
     paramsChanged = Signal(object)
     colormapChanged = Signal(str)
-    playRequested = Signal()
-    playSelectionRequested = Signal()
-    stopRequested = Signal()
-    annotateModeToggled = Signal(bool)
-    saveRequested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._emitting = False  # guard against feedback while setting defaults
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-
-        layout.addWidget(self._build_spectro_group())
-        layout.addWidget(self._build_mode_group())
-        layout.addWidget(self._build_playback_group())
-
-        self._save_btn = QPushButton("Save  (Ctrl+S)")
-        self._save_btn.clicked.connect(self.saveRequested.emit)
-        layout.addWidget(self._save_btn)
-        layout.addStretch(1)
-
-    # ------------------------------------------------------------------ #
-    # Group builders
-    # ------------------------------------------------------------------ #
-    def _build_spectro_group(self) -> QGroupBox:
-        box = QGroupBox("Spectrogram")
-        form = QFormLayout(box)
+        form = QFormLayout(self)
+        form.setContentsMargins(8, 8, 8, 8)
 
         self._nfft = QComboBox()
         for n in _NFFT_CHOICES:
@@ -124,34 +96,6 @@ class ControlsPanel(QWidget):
         self._f_max.setEnabled(False)
         self._f_max.valueChanged.connect(self._on_params)
         form.addRow("f_max", self._f_max)
-
-        return box
-
-    def _build_mode_group(self) -> QGroupBox:
-        box = QGroupBox("Mode")
-        v = QVBoxLayout(box)
-
-        self._annotate = QCheckBox("Annotate mode (drag to draw)")
-        self._annotate.toggled.connect(self.annotateModeToggled.emit)
-        v.addWidget(self._annotate)
-        return box
-
-    def _build_playback_group(self) -> QGroupBox:
-        box = QGroupBox("Playback")
-        row = QHBoxLayout(box)
-
-        play = QPushButton("Play")
-        play.clicked.connect(self.playRequested.emit)
-        row.addWidget(play)
-
-        play_sel = QPushButton("Play selection")
-        play_sel.clicked.connect(self.playSelectionRequested.emit)
-        row.addWidget(play_sel)
-
-        stop = QPushButton("Stop")
-        stop.clicked.connect(self.stopRequested.emit)
-        row.addWidget(stop)
-        return box
 
     # ------------------------------------------------------------------ #
     # Param assembly / signals
