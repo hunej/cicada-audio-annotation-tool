@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cicada"
+version = "2.0.0"
+description = "Lightweight open-source spectrogram annotation tool — labelme for audio spectrograms."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Cicada contributors" }]
+keywords = ["audio", "spectrogram", "annotation", "bioacoustics", "labelme"]
+
+dependencies = [
+    "numpy>=1.23",
+    "scipy>=1.10",
+    "soundfile>=0.12",
+    "sounddevice>=0.4.6",
+    "pyqtgraph>=0.13.3",
+    "PySide6>=6.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+]
+
+[project.scripts]
+cicada = "cicada.app:main"
+
+[project.urls]
+Homepage = "https://github.com/ShivarajMeti/cicada-audio-annotation-tool"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

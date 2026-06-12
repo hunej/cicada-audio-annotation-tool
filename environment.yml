@@ -1,0 +1,13 @@
+name: cicada
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  # Native libs that the pip wheels bind to (PortAudio for sounddevice,
+  # libsndfile for soundfile). Pulled from conda-forge so they are present
+  # system-wide on macOS arm64.
+  - portaudio
+  - libsndfile
+  - pip
+  - pip:
+      - -e .

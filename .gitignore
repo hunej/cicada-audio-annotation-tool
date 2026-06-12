@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# Local sample / reference audio (large binaries, not part of the package)
+example/
+sample_data/
+
+# Editors
+.vscode/
+.idea/
