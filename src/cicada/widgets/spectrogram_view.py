@@ -289,6 +289,14 @@ class SpectrogramView(QWidget):
         self._image.setRect(
             pg.QtCore.QRectF(0.0, 0.0, float(result.duration), float(result.f_max))
         )
+        # Lock panning/zooming to the data extent so the view can't drift into
+        # empty space (negative time/frequency or past the end of the file).
+        self._vb.setLimits(
+            xMin=0.0,
+            xMax=float(result.duration),
+            yMin=0.0,
+            yMax=float(result.f_max),
+        )
         self._apply_levels()
         if not self._view_pinned:
             self._plot.autoRange()
