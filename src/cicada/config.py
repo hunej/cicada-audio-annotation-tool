@@ -28,6 +28,9 @@ class AppConfig:
     spectrogram: SpectrogramParams = field(default_factory=SpectrogramParams)
     colormap: str = "viridis"
     labels_file: str = DEFAULT_LABELS_FILE
+    # Per-folder variant whitelist: {folder_path: [variant names to show]}.
+    # Absent folder -> show all variants.
+    variant_filters: dict[str, list[str]] = field(default_factory=dict)
 
 
 def _config_from_dict(d: dict) -> AppConfig:
@@ -41,12 +44,17 @@ def _config_from_dict(d: dict) -> AppConfig:
         db_ceil=float(sp_d.get("db_ceil", 0.0)),
         f_max=sp_d.get("f_max", None),
     )
+    raw_filters = d.get("variant_filters", {}) or {}
+    variant_filters = {
+        str(k): [str(v) for v in (vals or [])] for k, vals in raw_filters.items()
+    }
     return AppConfig(
         last_folder=d.get("last_folder"),
         autosave_on_switch=bool(d.get("autosave_on_switch", True)),
         spectrogram=params,
         colormap=str(d.get("colormap", "viridis")),
         labels_file=str(d.get("labels_file", DEFAULT_LABELS_FILE)),
+        variant_filters=variant_filters,
     )
 
 

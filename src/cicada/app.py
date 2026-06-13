@@ -212,6 +212,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
     def _wire(self) -> None:
         self._file_list.selectionChanged.connect(self._on_file_selected)
+        self._file_list.variantsChanged.connect(self._on_variants_changed)
 
         self._settings.paramsChanged.connect(self._on_params_changed)
         self._settings.colormapChanged.connect(self._on_colormap_changed)
@@ -232,7 +233,10 @@ class MainWindow(QMainWindow):
         self._labels.set_labels(labels)
         self._view.set_colormap(self._config.colormap)
         if self._config.last_folder and os.path.isdir(self._config.last_folder):
-            self._file_list.set_folder(self._config.last_folder)
+            self._file_list.set_folder(
+                self._config.last_folder,
+                self._config.variant_filters.get(self._config.last_folder),
+            )
 
     # ------------------------------------------------------------------ #
     # File handling
@@ -244,7 +248,14 @@ class MainWindow(QMainWindow):
             return
         self._config.last_folder = path
         self._persist_config()
-        self._file_list.set_folder(path)
+        self._file_list.set_folder(path, self._config.variant_filters.get(path))
+
+    def _on_variants_changed(self, enabled: list) -> None:
+        """Persist the per-folder variant filter when the user toggles it."""
+        folder = self._config.last_folder
+        if folder:
+            self._config.variant_filters[folder] = list(enabled)
+            self._persist_config()
 
     def _on_file_selected(self, path: str, same_recording: bool = False) -> None:
         """Autosave the previous file (if dirty), then load ``path``.

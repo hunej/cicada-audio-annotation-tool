@@ -15,6 +15,23 @@ import soundfile as sf
 from .models import AudioMeta
 
 
+def describe(path: str) -> dict:
+    """Read just the header of ``path`` and return basic audio info.
+
+    Cheap (no sample data is decoded) — used for the file-list "Audio info"
+    popup. Keys: ``samplerate``, ``channels``, ``frames``, ``duration`` (s),
+    ``format`` (``"WAV/PCM_16"``-style).
+    """
+    inf = sf.info(path)
+    return {
+        "samplerate": int(inf.samplerate),
+        "channels": int(inf.channels),
+        "frames": int(inf.frames),
+        "duration": float(inf.duration),
+        "format": f"{inf.format}/{inf.subtype}",
+    }
+
+
 def _import_sounddevice():
     """Lazily import sounddevice, raising a clear error if unavailable.
 
