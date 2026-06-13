@@ -171,6 +171,14 @@ class FileListPanel(QWidget):
         entry = self._current_entry()
         return entry[1] if entry is not None else FLAT_VARIANT
 
+    def sibling_variant_paths(self) -> list[str]:
+        """Wav paths of the current recording's *other* variants (for box sync)."""
+        entry = self._current_entry()
+        if entry is None:
+            return []
+        rec, variant = entry
+        return [p for v, p in rec.variants.items() if v != variant and p]
+
     # ------------------------------------------------------------------ #
     # List items / annotation marks
     # ------------------------------------------------------------------ #

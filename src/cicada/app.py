@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 
 from . import audio, io_json, label_config, spectrogram
 from .config import AppConfig, load_config, save_config
-from .models import Annotation
+from .models import Annotation, Box
 from .widgets.controls import SettingsPanel
 from .widgets.file_list import FileListPanel
 from .widgets.label_panel import LabelPanel
@@ -142,6 +142,13 @@ class MainWindow(QMainWindow):
         save_btn = QAction("Save", self)
         save_btn.triggered.connect(self._on_save)
         bar.addAction(save_btn)
+
+        sync_btn = QAction("Sync → variants", self)
+        sync_btn.setToolTip(
+            "Copy these boxes to the other variant(s) of this recording"
+        )
+        sync_btn.triggered.connect(self._on_sync_to_variants)
+        bar.addAction(sync_btn)
 
     def _open_settings(self) -> None:
         """Show the (non-modal) spectrogram settings dialog."""
@@ -436,6 +443,54 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Nothing to save.")
             return
         self._save_annotation(self._current_path, quiet=False)
+
+    def _on_sync_to_variants(self) -> None:
+        """Copy the current boxes onto every other variant of this recording.
+
+        Variants share the same time/frequency grid, so the boxes (authoritative
+        in seconds/Hz) transfer as-is; each target's sidecar is written with that
+        file's own audio metadata. ``px`` is dropped so it is recomputed against
+        the target's own spectrogram when it is next opened.
+        """
+        if self._current_audio is None or self._current_result is None:
+            return
+        targets = self._file_list.sibling_variant_paths()
+        if not targets:
+            self.statusBar().showMessage("No other variants to sync to.")
+            return
+
+        params = self._settings.current_params()
+        f_max = self._current_result.f_max
+        boxes = [
+            Box(b.label, b.t_start, b.t_end, b.f_low, b.f_high, None)
+            for b in self._view.get_boxes()
+        ]
+
+        done = 0
+        for path in targets:
+            try:
+                data = audio.load(path)
+            except Exception as exc:  # noqa: BLE001 — surface and skip this one
+                self.statusBar().showMessage(
+                    f"Sync failed for {os.path.basename(path)}: {exc}"
+                )
+                continue
+            annotation = Annotation(
+                audio_file=os.path.basename(path),
+                audio_meta=data.meta,
+                spectrogram=params.to_meta(f_max),
+                boxes=boxes,
+            )
+            try:
+                io_json.save(annotation, path)
+                done += 1
+            except OSError as exc:
+                self.statusBar().showMessage(f"Sync write failed: {exc}")
+
+        self._file_list.refresh_annotated_marks()
+        self.statusBar().showMessage(
+            f"Synced {len(boxes)} box(es) to {done} variant(s)."
+        )
 
     def _save_annotation(self, path: str, quiet: bool) -> None:
         """Build and write the annotation sidecar for ``path``."""
