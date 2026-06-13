@@ -22,6 +22,27 @@ from ..spectrogram import SpectrogramResult
 from .box_item import BoxROI
 
 
+class _ResetAxis(pg.AxisItem):
+    """AxisItem that resets *its own* axis to full extent on double-click.
+
+    Double-clicking the time (bottom) axis auto-ranges time only; the frequency
+    (left) axis auto-ranges frequency only. Single clicks / drags fall through to
+    the default :class:`~pyqtgraph.AxisItem` behaviour (drag-to-zoom that axis).
+    """
+
+    def __init__(self, view: "SpectrogramView", which: str, orientation: str) -> None:
+        super().__init__(orientation=orientation)
+        self._view = view
+        self._which = which  # "x" (time) or "y" (frequency)
+
+    def mouseClickEvent(self, ev) -> None:  # noqa: N802 (pg API)
+        if ev.button() == Qt.MouseButton.LeftButton and ev.double():
+            self._view._reset_axis(self._which)
+            ev.accept()
+            return
+        super().mouseClickEvent(ev)
+
+
 class _AnnotateViewBox(pg.ViewBox):
     """ViewBox that draws rubber-band boxes on drag while in annotate mode.
 
@@ -29,6 +50,13 @@ class _AnnotateViewBox(pg.ViewBox):
     :class:`BoxROI` (via the owning view's callbacks) instead of panning. Other
     interactions (panning when not annotating, right-button zoom) fall back to
     the default :class:`~pyqtgraph.ViewBox` behaviour.
+
+    Two audio-oriented tweaks override the defaults:
+
+    * the mouse wheel over the plot area zooms the **time** axis only (the full
+      band is usually wanted while scanning along time); wheeling *over* an axis
+      still zooms just that axis, since the axis passes an explicit ``axis``;
+    * a double-click on the empty plot resets **both** axes to the full view.
     """
 
     def __init__(self, view: "SpectrogramView", **kwargs) -> None:
@@ -50,7 +78,19 @@ class _AnnotateViewBox(pg.ViewBox):
         if ev.isFinish():
             self._view._finish_new_box()
 
+    def wheelEvent(self, ev, axis=None) -> None:  # noqa: N802 (pg API)
+        # Over the plot area (axis is None) confine zoom to time (X); when an
+        # AxisItem forwards the wheel it passes axis=0/1 and we honour it.
+        if axis is None:
+            axis = pg.ViewBox.XAxis
+        super().wheelEvent(ev, axis=axis)
+
     def mouseClickEvent(self, ev) -> None:  # noqa: N802 (pg API)
+        # Double-click on empty spectrogram area resets the whole view.
+        if ev.button() == Qt.MouseButton.LeftButton and ev.double():
+            self._view.reset_view()
+            ev.accept()
+            return
         # A plain left click on empty spectrogram area sets the play cursor.
         # (Clicks on a BoxROI are consumed by the ROI before reaching here.)
         if ev.button() == Qt.MouseButton.LeftButton:
@@ -109,7 +149,13 @@ class SpectrogramView(QWidget):
         layout.addWidget(self._glw)
 
         self._vb = _AnnotateViewBox(self)
-        self._plot = self._glw.addPlot(viewBox=self._vb)
+        self._plot = self._glw.addPlot(
+            viewBox=self._vb,
+            axisItems={
+                "bottom": _ResetAxis(self, "x", "bottom"),
+                "left": _ResetAxis(self, "y", "left"),
+            },
+        )
         self._plot.setLabel("bottom", "Time (s)")
         self._plot.setLabel("left", "Frequency (Hz)")
         # Low frequency at the bottom, increasing upward.
@@ -354,9 +400,14 @@ class SpectrogramView(QWidget):
         self._vb.setYRange(f0, f1, padding=0)
 
     def reset_view(self) -> None:
-        """Unpin and auto-range to the full spectrogram extent."""
+        """Unpin and auto-range to the full spectrogram extent (both axes)."""
         self._view_pinned = False
         self._plot.autoRange()
+
+    def _reset_axis(self, which: str) -> None:
+        """Auto-range a single axis to full extent (``"x"`` time / ``"y"`` freq)."""
+        vb_axis = pg.ViewBox.XAxis if which == "x" else pg.ViewBox.YAxis
+        self._vb.enableAutoRange(axis=vb_axis, enable=True)
 
     # ------------------------------------------------------------------ #
     # Play cursor (playhead)
