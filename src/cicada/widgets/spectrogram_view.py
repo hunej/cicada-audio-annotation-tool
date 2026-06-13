@@ -107,7 +107,8 @@ class SpectrogramView(QWidget):
     Public API (relied on by WP4)::
 
         set_spectrogram(result)        set_colormap(name)
-        set_levels(db_floor, db_ceil)  set_annotate_mode(enabled)
+        set_overview(samples, dur)     set_annotate_mode(enabled)
+        set_levels(db_floor, db_ceil)
         set_active_label(name, color)  set_boxes(boxes, color_for)
         get_boxes() -> list[Box]       clear_boxes()
         selected_box() -> Box | None   relabel_selected(name, color)
@@ -141,9 +142,15 @@ class SpectrogramView(QWidget):
         self._db_ceil: float = 0.0
         self._colormap_name: str = "viridis"
         self._view_pinned: bool = False
+        # Guard against feedback loops between the overview region and the view.
+        self._syncing: bool = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._build_overview()
+        layout.addWidget(self._overview_glw)
 
         self._glw = pg.GraphicsLayoutWidget()
         layout.addWidget(self._glw)
@@ -189,6 +196,88 @@ class SpectrogramView(QWidget):
         self._vb.sigRangeChanged.connect(self._on_range_changed)
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    # ------------------------------------------------------------------ #
+    # Time-domain overview (ocenaudio-style navigator)
+    # ------------------------------------------------------------------ #
+    def _build_overview(self) -> None:
+        """Thin full-file waveform strip with a draggable view-range region."""
+        self._overview_glw = pg.GraphicsLayoutWidget()
+        self._overview_glw.setFixedHeight(64)
+        self._overview_glw.ci.setContentsMargins(0, 0, 0, 0)
+
+        self._ov_plot = self._overview_glw.addPlot()
+        self._ov_plot.setMenuEnabled(False)
+        self._ov_plot.hideAxis("left")
+        self._ov_plot.hideAxis("bottom")
+        self._ov_plot.hideButtons()
+        # The strip is a navigator, not a zoomable plot: only the region moves.
+        self._ov_plot.setMouseEnabled(x=False, y=False)
+        self._ov_plot.getViewBox().setMouseEnabled(x=False, y=False)
+
+        pen = pg.mkPen("#3fb6a8", width=1)
+        brush = pg.mkBrush(63, 182, 168, 110)
+        self._ov_top = pg.PlotDataItem(pen=pen)
+        self._ov_bot = pg.PlotDataItem(pen=pen)
+        self._ov_fill = pg.FillBetweenItem(self._ov_top, self._ov_bot, brush=brush)
+        self._ov_plot.addItem(self._ov_fill)
+        self._ov_plot.addItem(self._ov_top)
+        self._ov_plot.addItem(self._ov_bot)
+
+        # The draggable window: drag the body to pan, drag an edge to resize.
+        self._ov_region = pg.LinearRegionItem(
+            brush=pg.mkBrush(255, 255, 255, 40),
+            hoverBrush=pg.mkBrush(255, 255, 255, 70),
+        )
+        self._ov_region.setZValue(10)
+        self._ov_plot.addItem(self._ov_region)
+        self._ov_region.sigRegionChanged.connect(self._on_overview_region)
+
+    def set_overview(self, samples: np.ndarray, duration: float) -> None:
+        """Render the full-file waveform envelope and sync the region to the view."""
+        n = int(np.asarray(samples).shape[0]) if samples is not None else 0
+        if n == 0 or duration <= 0:
+            self._ov_top.setData([], [])
+            self._ov_bot.setData([], [])
+            return
+
+        s = np.asarray(samples, dtype=np.float32).reshape(-1)
+        buckets = 2000
+        if n <= buckets:
+            x = np.linspace(0.0, duration, n)
+            maxs = s
+            mins = s
+        else:
+            step = n // buckets
+            usable = step * buckets
+            chunk = s[:usable].reshape(buckets, step)
+            maxs = chunk.max(axis=1)
+            mins = chunk.min(axis=1)
+            x = np.linspace(0.0, duration, buckets)
+
+        self._ov_top.setData(x, maxs)
+        self._ov_bot.setData(x, mins)
+        peak = float(max(abs(float(maxs.max())), abs(float(mins.min())), 1e-6))
+        self._ov_plot.setXRange(0.0, duration, padding=0)
+        self._ov_plot.setYRange(-peak, peak, padding=0)
+        self._ov_region.setBounds((0.0, duration))
+
+        # Match the window to whatever the main view currently shows.
+        t0, t1, _f0, _f1 = self.get_view_range()
+        self._syncing = True
+        self._ov_region.setRegion((t0, t1))
+        self._syncing = False
+
+    def _on_overview_region(self) -> None:
+        """Region dragged on the overview -> pan/zoom the main view in time."""
+        if self._syncing:
+            return
+        lo, hi = self._ov_region.getRegion()
+        if hi <= lo:
+            return
+        self._syncing = True
+        self._vb.setXRange(lo, hi, padding=0)
+        self._syncing = False
 
     # ------------------------------------------------------------------ #
     # Spectrogram display
@@ -432,3 +521,8 @@ class SpectrogramView(QWidget):
         self._view_pinned = True
         t0, t1, f0, f1 = self.get_view_range()
         self.viewRangeChanged.emit(t0, t1, f0, f1)
+        # Mirror the visible time window in the overview navigator.
+        if not self._syncing:
+            self._syncing = True
+            self._ov_region.setRegion((t0, t1))
+            self._syncing = False

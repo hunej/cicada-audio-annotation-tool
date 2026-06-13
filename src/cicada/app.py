@@ -273,6 +273,8 @@ class MainWindow(QMainWindow):
         self._current_audio = data
         # Keep the view on a variant switch (same recording); reset for new ones.
         self._compute_and_show(keep_view=same_recording)
+        # Refresh the time-domain overview navigator for the new audio.
+        self._view.set_overview(data.samples, data.meta.duration)
 
         # Reset the play cursor on a new recording; keep it across variants.
         if not same_recording:
