@@ -26,10 +26,10 @@ class LabelDef:
 
 
 DEFAULT_LABELS: list[LabelDef] = [
-    LabelDef("call", "#e6194b"),
-    LabelDef("chorus", "#3cb44b"),
     LabelDef("noise", "#4363d8"),
     LabelDef("unknown", "#f58231"),
+    LabelDef("suppressed_near_end_speech", "#f032e6"),
+    LabelDef("leaked_far_end", "#bcf60c"),
 ]
 
 # Deterministic fallback palette for unknown label names.
