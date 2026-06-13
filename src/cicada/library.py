@@ -86,7 +86,9 @@ def _scan_flat(root: str) -> list[Recording]:
         for name in sorted(files):
             if _is_wav(name):
                 path = os.path.join(dirpath, name)
-                rel = os.path.relpath(path, root)
+                # Display key with forward slashes so nested names look the same
+                # on Windows (backslashes) and POSIX.
+                rel = os.path.relpath(path, root).replace(os.sep, "/")
                 recs.append(Recording(key=rel, variants={FLAT_VARIANT: path}))
     recs.sort(key=lambda r: r.key)
     return recs

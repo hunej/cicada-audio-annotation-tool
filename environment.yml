@@ -5,7 +5,8 @@ dependencies:
   - python=3.11
   # Native libs that the pip wheels bind to (PortAudio for sounddevice,
   # libsndfile for soundfile). Pulled from conda-forge so they are present
-  # system-wide on macOS arm64.
+  # system-wide on macOS, Linux and Windows. (On Windows the pip wheels also
+  # bundle these DLLs, so conda is optional there.)
   - portaudio
   - libsndfile
   - pip
